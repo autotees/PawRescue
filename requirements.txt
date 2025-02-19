@@ -1,0 +1,10 @@
+# requirements.txt
+fastapi
+uvicorn
+tensorflow
+numpy
+pillow
+python-multipart
+requests
+supabase
+pandas
