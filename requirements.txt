@@ -7,3 +7,4 @@ Pillow
 requests
 supabase
 python-multipart
+gdown
