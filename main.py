@@ -13,8 +13,47 @@ import os
 app = FastAPI()
 
 # Download model from Google Drive on startup
-MODEL_ID = "https://drive.google.com/file/d/13W0sa_WmCtI47J3er4OvHpv0my3jaErt/view?usp=sharing"  # Get this from your Drive share link
+MODEL_ID = "from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import tensorflow as tf
+import numpy as np
+from PIL import Image
+import requests
+from io import BytesIO
+from supabase import create_client
+import os
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize Supabase client
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_KEY")
+supabase = create_client(supabase_url, supabase_key)
+
+# Download model directly from Google Drive
+DRIVE_ID = "13W0sa_WmCtI47J3er4OvHpv0my3jaErt"  # Your file ID
 if not os.path.exists('best_model.keras'):
+    print("Downloading model from Google Drive...")
+    download_url = f"https://drive.google.com/uc?export=download&id={DRIVE_ID}"
+    response = requests.get(download_url)
+    with open('best_model.keras', 'wb') as f:
+        f.write(response.content)
+
+# Load model
+print("Loading model...")
+model = tf.keras.models.load_model('best_model.keras')
+print("Model loaded successfully!")"  # Get this from your Drive share link
+if not os.path.exists('best_model.kras'):
     gdown.download(f'https://drive.google.com/uc?id={MODEL_ID}', 'best_model.keras', quiet=False)
 
 # Load model
