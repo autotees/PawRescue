@@ -7,11 +7,18 @@ from PIL import Image
 import requests
 from io import BytesIO
 from supabase import create_client
-import pandas as pd
-from fastapi.middleware.cors import CORSMiddleware
+import gdown
 import os
 
 app = FastAPI()
+
+# Download model from Google Drive on startup
+MODEL_ID = "https://drive.google.com/file/d/13W0sa_WmCtI47J3er4OvHpv0my3jaErt/view?usp=sharing"  # Get this from your Drive share link
+if not os.path.exists('best_model.keras'):
+    gdown.download(f'https://drive.google.com/uc?id={MODEL_ID}', 'best_model.keras', quiet=False)
+
+# Load model
+model = tf.keras.models.load_model('best_model.keras')
 
 # Enable CORS
 app.add_middleware(
@@ -22,8 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load model
-model = tf.keras.models.load_model('best_model.keras')
+
 
 # Supabase setup
 supabase = create_client(
