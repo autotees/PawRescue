@@ -9,6 +9,7 @@ from io import BytesIO
 from supabase import create_client
 import os
 from fastapi.middleware.cors import CORSMiddleware
+import gdown
 
 # Get the absolute path of the current directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,46 +19,53 @@ print(f"Current working directory: {os.getcwd()}")
 print(f"Base directory: {BASE_DIR}")
 print(f"Model path: {MODEL_PATH}")
 
-def download_file_from_google_drive(file_id, destination):
+# Global variable for model
+model = None
+
+def ensure_model():
+    """Ensure model is downloaded and loaded"""
+    global model
+    
     try:
-        # First get a download URL that handles the virus scan warning
-        URL = "https://drive.google.com/uc"
-        session = requests.Session()
+        # Direct Google Drive download URL
+        url = 'https://drive.google.com/uc?id=13W0sa_WmCtI47J3er4OvHpv0my3jaErt'
         
-        # Get the initial response
-        response = session.get(URL, params={
-            'id': file_id,
-            'export': 'download'
-        }, stream=True)
+        print("Attempting to download model...")
+        # Use gdown for reliable Google Drive downloads
+        gdown.download(url, MODEL_PATH, quiet=False)
         
-        # If there's a download warning, we need to handle it
-        for key, value in response.cookies.items():
-            if key.startswith('download_warning'):
-                params = {'id': file_id, 'confirm': value, 'export': 'download'}
-                response = session.get(URL, params=params, stream=True)
-                break
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(f"Model download failed - file not found at {MODEL_PATH}")
+            
+        file_size = os.path.getsize(MODEL_PATH)
+        print(f"Model file size: {file_size} bytes")
         
-        # Write the file in chunks
-        print(f"Starting download to {destination}")
-        with open(destination, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=32768):
-                if chunk:
-                    f.write(chunk)
-        
-        # Verify the file was created
-        if os.path.exists(destination):
-            size = os.path.getsize(destination)
-            print(f"Download completed. File size: {size} bytes")
-            return True
-        return False
+        if file_size == 0:
+            raise ValueError("Downloaded file is empty")
+            
+        print("Loading model...")
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print("Model loaded successfully!")
+        return True
         
     except Exception as e:
-        print(f"Download error: {str(e)}")
+        print(f"Error in ensure_model: {str(e)}")
+        if os.path.exists(MODEL_PATH):
+            os.remove(MODEL_PATH)
+            print(f"Removed failed model file from {MODEL_PATH}")
         return False
 
 app = FastAPI()
 
-# Enable CORS
+@app.on_event("startup")
+async def startup_event():
+    """Initialize model on startup"""
+    global model
+    if model is None:
+        success = ensure_model()
+        if not success:
+            raise RuntimeError("Failed to initialize model")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,29 +79,7 @@ supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Model initialization
-DRIVE_ID = "13W0sa_WmCtI47J3er4OvHpv0my3jaErt"
 CLASSES = ['cats', 'dogs', 'humans', 'no_object']
-
-# Download and load model
-print("Checking for model file...")
-if not os.path.exists(MODEL_PATH):
-    print("Model not found. Downloading from Google Drive...")
-    success = download_file_from_google_drive(DRIVE_ID, MODEL_PATH)
-    if not success:
-        raise RuntimeError("Failed to download model from Google Drive")
-
-# Verify model file exists and has content
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"Model file not found at {MODEL_PATH}")
-
-file_size = os.path.getsize(MODEL_PATH)
-if file_size == 0:
-    raise ValueError(f"Model file is empty (0 bytes)")
-
-print(f"Loading model from {MODEL_PATH} (size: {file_size} bytes)")
-model = tf.keras.models.load_model(MODEL_PATH)
-print("Model loaded successfully!")
 
 class ImageRequest(BaseModel):
     bucket_name: str
@@ -108,6 +94,11 @@ def preprocess_image(image):
 
 @app.post("/predict")
 async def predict(request: ImageRequest):
+    global model
+    
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not initialized")
+        
     try:
         print(f"Getting image from bucket: {request.bucket_name}, path: {request.file_path}")
         url = supabase.storage.from_(request.bucket_name).get_public_url(request.file_path)
@@ -135,15 +126,14 @@ async def predict(request: ImageRequest):
 
 @app.get("/")
 def read_root():
-    model_exists = os.path.exists(MODEL_PATH)
-    model_size = os.path.getsize(MODEL_PATH) if model_exists else 0
-    
+    global model
     return {
         "status": "API is running",
         "message": "Welcome to the Classification API",
         "model_path": MODEL_PATH,
-        "model_exists": model_exists,
-        "model_size": model_size,
+        "model_exists": os.path.exists(MODEL_PATH),
+        "model_size": os.path.getsize(MODEL_PATH) if os.path.exists(MODEL_PATH) else 0,
+        "model_loaded": model is not None,
         "directory_contents": os.listdir(BASE_DIR)
     }
 
